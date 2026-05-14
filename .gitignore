@@ -1,0 +1,12 @@
+# ビルドされたバイナリ
+/bin/
+/doc-share-saas
+
+# 環境変数ファイル（パスワードなどを書くため絶対にプッシュしない）
+.env
+
+# DockerのPostgreSQLデータボリューム
+postgres_data/
+
+# OSが自動生成するファイル
+.DS_Store

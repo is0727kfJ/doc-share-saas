@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:15-alpine
+    container_name: doc-share-db
+    restart: always
+    environment:
+      # データベース接続用の設定（Goのコードと合わせる必要があります）
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: doc_share_db
+    ports:
+      - "5432:5432" # ホスト側のポート:コンテナ側のポート
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+volumes:
+  postgres_data:
