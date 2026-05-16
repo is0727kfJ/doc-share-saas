@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
+
 	"github.com/google/uuid"
 	"github.com/is0727kfJ/doc-share-saas/internal/database"
 )
@@ -45,4 +47,36 @@ func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(newDoc)
+}
+
+// ListDocuments : ドキュメントの一覧を取得して返す処理
+func (h *Handler) ListDocuments(w http.ResponseWriter, r *http.Request) {
+	// データベースから新しい順にドキュメント一覧を取得
+	docs, err := h.queries.ListDocuments(r.Context())
+	if err != nil {
+		http.Error(w, "ドキュメントの取得に失敗しました", http.StatusInternalServerError)
+		return
+	}
+
+	// 取得した一覧データ(docs)をJSONにしてフロントエンドに返す
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(docs)
+}
+
+func (h *Handler) ListDocumentsByTeam(w http.ResponseWriter, r *http.Request) {
+	teamIDStr := chi.URLParam(r, "team_id")
+	teamID, err := uuid.Parse(teamIDStr)
+	if err != nil {
+		http.Error(w, "無効なチームID", http.StatusBadRequest)
+		return
+	}
+
+	docs, err := h.queries.ListDocumentsByTeam(r.Context(), teamID)
+	if err != nil {
+		http.Error(w, "ドキュメントの取得に失敗しました", http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(docs)
 }

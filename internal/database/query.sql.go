@@ -107,6 +107,39 @@ func (q *Queries) GetUserByCognitoSub(ctx context.Context, cognitoSub string) (U
 	return i, err
 }
 
+const listDocuments = `-- name: ListDocuments :many
+SELECT id, team_id, author_id, title, content, created_at, updated_at FROM documents
+ORDER BY created_at DESC
+`
+
+func (q *Queries) ListDocuments(ctx context.Context) ([]Document, error) {
+	rows, err := q.db.Query(ctx, listDocuments)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Document
+	for rows.Next() {
+		var i Document
+		if err := rows.Scan(
+			&i.ID,
+			&i.TeamID,
+			&i.AuthorID,
+			&i.Title,
+			&i.Content,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listDocumentsByTeam = `-- name: ListDocumentsByTeam :many
 SELECT id, team_id, author_id, title, content, created_at, updated_at FROM documents
 WHERE team_id = $1

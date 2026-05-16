@@ -21,3 +21,7 @@ RETURNING *;
 SELECT * FROM documents
 WHERE team_id = $1
 ORDER BY created_at DESC;
+
+-- name: ListDocuments :many
+SELECT * FROM documents
+ORDER BY created_at DESC;

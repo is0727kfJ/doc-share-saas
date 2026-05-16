@@ -46,11 +46,18 @@ func main() {
 	})
 
 	userHandler := user.NewHandler(queries)
-	r.Post("/api/users", userHandler.CreateUser)
 	docHandler := document.NewHandler(queries)
-	r.Post("/api/documents", docHandler.CreateDocument)
 	teamHandler := team.NewHandler(queries)
+
+	r.Post("/api/users", userHandler.CreateUser)
+	r.Post("/api/documents", docHandler.CreateDocument)
+	r.Get("/api/documents", docHandler.ListDocuments)
 	r.Post("/api/teams", teamHandler.CreateTeam)
+
+	r.Route("/api/teams/{team_id}", func(r chi.Router) {
+		// GET /api/teams/{team_id}/documents
+		r.Get("/documents", docHandler.ListDocumentsByTeam)
+	})
 
 	// 4. HTTPサーバーを起動する
 	fmt.Println("APIサーバーが http://localhost:8080 で起動しました")
