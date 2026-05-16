@@ -8,7 +8,7 @@ package database
 import (
 	"context"
 
-	"github.com/jackc/pgx/v5/pgtype"
+	uuid "github.com/google/uuid"
 )
 
 const createDocument = `-- name: CreateDocument :one
@@ -18,10 +18,10 @@ RETURNING id, team_id, author_id, title, content, created_at, updated_at
 `
 
 type CreateDocumentParams struct {
-	TeamID   pgtype.UUID `json:"team_id"`
-	AuthorID pgtype.UUID `json:"author_id"`
-	Title    string      `json:"title"`
-	Content  string      `json:"content"`
+	TeamID   uuid.UUID `json:"team_id"`
+	AuthorID uuid.UUID `json:"author_id"`
+	Title    string    `json:"title"`
+	Content  string    `json:"content"`
 }
 
 func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) (Document, error) {
@@ -113,7 +113,7 @@ WHERE team_id = $1
 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListDocumentsByTeam(ctx context.Context, teamID pgtype.UUID) ([]Document, error) {
+func (q *Queries) ListDocumentsByTeam(ctx context.Context, teamID uuid.UUID) ([]Document, error) {
 	rows, err := q.db.Query(ctx, listDocumentsByTeam, teamID)
 	if err != nil {
 		return nil, err

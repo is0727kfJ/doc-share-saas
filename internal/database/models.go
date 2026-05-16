@@ -5,13 +5,14 @@
 package database
 
 import (
+	uuid "github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Document struct {
-	ID        pgtype.UUID      `json:"id"`
-	TeamID    pgtype.UUID      `json:"team_id"`
-	AuthorID  pgtype.UUID      `json:"author_id"`
+	ID        uuid.UUID        `json:"id"`
+	TeamID    uuid.UUID        `json:"team_id"`
+	AuthorID  uuid.UUID        `json:"author_id"`
 	Title     string           `json:"title"`
 	Content   string           `json:"content"`
 	CreatedAt pgtype.Timestamp `json:"created_at"`
@@ -19,21 +20,21 @@ type Document struct {
 }
 
 type Team struct {
-	ID        pgtype.UUID      `json:"id"`
+	ID        uuid.UUID        `json:"id"`
 	Name      string           `json:"name"`
 	CreatedAt pgtype.Timestamp `json:"created_at"`
 	UpdatedAt pgtype.Timestamp `json:"updated_at"`
 }
 
 type TeamMember struct {
-	UserID   pgtype.UUID      `json:"user_id"`
-	TeamID   pgtype.UUID      `json:"team_id"`
+	UserID   uuid.UUID        `json:"user_id"`
+	TeamID   uuid.UUID        `json:"team_id"`
 	Role     string           `json:"role"`
 	JoinedAt pgtype.Timestamp `json:"joined_at"`
 }
 
 type User struct {
-	ID         pgtype.UUID      `json:"id"`
+	ID         uuid.UUID        `json:"id"`
 	CognitoSub string           `json:"cognito_sub"`
 	Name       string           `json:"name"`
 	Email      string           `json:"email"`

@@ -4,22 +4,22 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
-	"github.com/google/uuid"
+	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/jackc/pgx/v5"
 	"github.com/joho/godotenv"
 
 	"github.com/is0727kfJ/doc-share-saas/internal/database"
+	"github.com/is0727kfJ/doc-share-saas/internal/document"
+	"github.com/is0727kfJ/doc-share-saas/internal/team"
+	"github.com/is0727kfJ/doc-share-saas/internal/user"
 )
 
 func main() {
-	// 1. .envファイルから設定を読み込む
-	err := godotenv.Load()
-	if err != nil {
-		log.Println("環境変数ファイル(.env)が見つかりません。")
-	}
-
+	_ = godotenv.Load() // .envファイルがなくても続行するため、エラーは無視
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
 		log.Fatal("DB_URLが設定されていません")
@@ -31,24 +31,31 @@ func main() {
 	if err != nil {
 		log.Fatalf("データベース接続エラー: %v\n", err)
 	}
-	defer conn.Close(ctx) // プログラム終了時に自動で接続を閉じる
-	fmt.Println("✅ データベース接続成功！")
+	defer conn.Close(ctx)
 
-	// 3. sqlcで自動生成された関数群（クライアント）を呼び出す準備
+	// 3. sqlcで自動生成された関数群呼び出す準備
 	queries := database.New(conn)
 
-	// 4. テスト：新しいユーザーを作成してみる
-	// ※CognitoのIDはダミーのランダム文字列を作成して使います
-	dummySub := "cognito-sub-" + uuid.New().String()[:8]
-	newUser, err := queries.CreateUser(ctx, database.CreateUserParams{
-		CognitoSub: dummySub,
-		Name:       "テストエンジニア",
-		Email:      dummySub + "@example.com",
+	r := chi.NewRouter()
+
+	r.Use(middleware.Logger)    // ロギングミドルウェアを追加
+	r.Use(middleware.Recoverer) // パニックからの回復ミドルウェアを追加
+	// ルートハンドラーを定義
+	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte("OK"))
 	})
-	if err != nil {
-		log.Fatalf("ユーザー作成失敗: %v\n", err)
+
+	userHandler := user.NewHandler(queries)
+	r.Post("/api/users", userHandler.CreateUser)
+	docHandler := document.NewHandler(queries)
+	r.Post("/api/documents", docHandler.CreateDocument)
+	teamHandler := team.NewHandler(queries)
+	r.Post("/api/teams", teamHandler.CreateTeam)
+
+	// 4. HTTPサーバーを起動する
+	fmt.Println("APIサーバーが http://localhost:8080 で起動しました")
+	if err := http.ListenAndServe(":8080", r); err != nil {
+		log.Fatalf("サーバーエラー: %v\n", err)
 	}
 
-	// 成功したら結果を表示
-	fmt.Printf("🎉 ユーザー作成成功！\nID: %s\n名前: %s\nEmail: %s\n", newUser.ID, newUser.Name, newUser.Email)
 }

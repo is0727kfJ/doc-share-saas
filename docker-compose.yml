@@ -6,7 +6,7 @@ services:
     container_name: doc-share-db
     restart: always
     environment:
-      # データベース接続用の設定（Goのコードと合わせる必要があります）
+      # データベース接続用の設定
       POSTGRES_USER: user
       POSTGRES_PASSWORD: password
       POSTGRES_DB: doc_share_db
