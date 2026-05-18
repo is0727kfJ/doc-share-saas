@@ -9,7 +9,32 @@ import (
 	"context"
 
 	uuid "github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
+
+const addTeamMember = `-- name: AddTeamMember :one
+INSERT INTO team_members (user_id, team_id, role)
+VALUES ($1, $2, $3)
+RETURNING user_id, team_id, role, joined_at
+`
+
+type AddTeamMemberParams struct {
+	UserID uuid.UUID `json:"user_id"`
+	TeamID uuid.UUID `json:"team_id"`
+	Role   string    `json:"role"`
+}
+
+func (q *Queries) AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TeamMember, error) {
+	row := q.db.QueryRow(ctx, addTeamMember, arg.UserID, arg.TeamID, arg.Role)
+	var i TeamMember
+	err := row.Scan(
+		&i.UserID,
+		&i.TeamID,
+		&i.Role,
+		&i.JoinedAt,
+	)
+	return i, err
+}
 
 const createDocument = `-- name: CreateDocument :one
 INSERT INTO documents (team_id, author_id, title, content)
@@ -86,6 +111,16 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const deleteDocument = `-- name: DeleteDocument :exec
+DELETE FROM documents
+WHERE id = $1
+`
+
+func (q *Queries) DeleteDocument(ctx context.Context, id uuid.UUID) error {
+	_, err := q.db.Exec(ctx, deleteDocument, id)
+	return err
 }
 
 const getUserByCognitoSub = `-- name: GetUserByCognitoSub :one
@@ -172,4 +207,72 @@ func (q *Queries) ListDocumentsByTeam(ctx context.Context, teamID uuid.UUID) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const listTeamMembers = `-- name: ListTeamMembers :many
+SELECT users.id, users.name, team_members.role, team_members.joined_at
+FROM users
+JOIN team_members ON users.id = team_members.user_id
+WHERE team_members.team_id = $1
+ORDER BY team_members.joined_at DESC
+`
+
+type ListTeamMembersRow struct {
+	ID       uuid.UUID        `json:"id"`
+	Name     string           `json:"name"`
+	Role     string           `json:"role"`
+	JoinedAt pgtype.Timestamp `json:"joined_at"`
+}
+
+func (q *Queries) ListTeamMembers(ctx context.Context, teamID uuid.UUID) ([]ListTeamMembersRow, error) {
+	rows, err := q.db.Query(ctx, listTeamMembers, teamID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListTeamMembersRow
+	for rows.Next() {
+		var i ListTeamMembersRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Role,
+			&i.JoinedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const updateDocument = `-- name: UpdateDocument :one
+UPDATE documents
+SET title = $2, content = $3, updated_at = NOW()
+WHERE id = $1
+RETURNING id, team_id, author_id, title, content, created_at, updated_at
+`
+
+type UpdateDocumentParams struct {
+	ID      uuid.UUID `json:"id"`
+	Title   string    `json:"title"`
+	Content string    `json:"content"`
+}
+
+func (q *Queries) UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (Document, error) {
+	row := q.db.QueryRow(ctx, updateDocument, arg.ID, arg.Title, arg.Content)
+	var i Document
+	err := row.Scan(
+		&i.ID,
+		&i.TeamID,
+		&i.AuthorID,
+		&i.Title,
+		&i.Content,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

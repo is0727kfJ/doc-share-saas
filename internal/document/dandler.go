@@ -27,6 +27,11 @@ type CreateDocumentRequest struct {
 	Content  string    `json:"content"`
 }
 
+type UpdateDocumentRequest struct {
+	Title   string `json:"title"`
+	Content string `json:"content"`
+}
+
 func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	var req CreateDocumentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -79,4 +84,47 @@ func (h *Handler) ListDocumentsByTeam(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(docs)
+}
+
+func (h *Handler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
+	docIDStr := chi.URLParam(r, "document_id")
+	docID, err := uuid.Parse(docIDStr)
+	if err != nil {
+		http.Error(w, "無効なドキュメントID", http.StatusBadRequest)
+		return
+	}
+	var req UpdateDocumentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		http.Error(w, "無効なリクエストボディ", http.StatusBadRequest)
+		return
+	}
+
+	updatedDoc, err := h.queries.UpdateDocument(r.Context(), database.UpdateDocumentParams{
+		ID:      docID,
+		Title:   req.Title,
+		Content: req.Content,
+	})
+
+	if err != nil {
+		http.Error(w, fmt.Sprintf("ドキュメント更新エラー: %v", err), http.StatusInternalServerError)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(updatedDoc)
+}
+
+func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
+	docIDStr := chi.URLParam(r, "document_id")
+	docID, err := uuid.Parse(docIDStr)
+	if err != nil {
+		http.Error(w, "無効なドキュメントID", http.StatusBadRequest)
+		return
+	}
+	err = h.queries.DeleteDocument(r.Context(), docID)
+	if err != nil {
+		http.Error(w, fmt.Sprintf("ドキュメント削除エラー: %v", err), http.StatusInternalServerError)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent) // 204 No Content
 }
