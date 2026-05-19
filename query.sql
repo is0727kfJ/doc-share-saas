@@ -29,12 +29,12 @@ ORDER BY created_at DESC;
 -- name: UpdateDocument :one
 UPDATE documents
 SET title = $2, content = $3, updated_at = NOW()
-WHERE id = $1
+WHERE id = $1 AND author_id = $4
 RETURNING *;
 
 -- name: DeleteDocument :exec
-DELETE FROM documents
-WHERE id = $1;
+DELETE FROM documents 
+WHERE id = $1 AND author_id = $2;
 
 -- name: AddTeamMember :one
 INSERT INTO team_members (user_id, team_id, role)

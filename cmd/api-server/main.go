@@ -13,8 +13,10 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/joho/godotenv"
 
+	"github.com/is0727kfJ/doc-share-saas/internal/auth"
 	"github.com/is0727kfJ/doc-share-saas/internal/database"
 	"github.com/is0727kfJ/doc-share-saas/internal/document"
+	mymiddleware "github.com/is0727kfJ/doc-share-saas/internal/middleware"
 	"github.com/is0727kfJ/doc-share-saas/internal/team"
 	"github.com/is0727kfJ/doc-share-saas/internal/user"
 )
@@ -57,16 +59,17 @@ func main() {
 		w.Write([]byte("OK"))
 	})
 
+	authHandler := auth.NewHandler()
 	userHandler := user.NewHandler(queries)
 	docHandler := document.NewHandler(queries)
 	teamHandler := team.NewHandler(queries)
 
 	r.Post("/api/users", userHandler.CreateUser)
-	r.Post("/api/documents", docHandler.CreateDocument)
-	r.Get("/api/documents", docHandler.ListDocuments)
 	r.Post("/api/teams", teamHandler.CreateTeam)
+	r.Post("/api/auth/login", authHandler.Login)
 
 	r.Route("/api/teams/{team_id}", func(r chi.Router) {
+		r.Use(mymiddleware.Auth) // 認証ミドルウェアを適用
 		// GET /api/teams/{team_id}/documents
 		r.Get("/documents", docHandler.ListDocumentsByTeam)
 		// POST /api/teams/{team_id}/members
@@ -75,9 +78,16 @@ func main() {
 		r.Get("/members", teamHandler.ListTeamMembers)
 	})
 
-	r.Route("/api/documents/{document_id}", func(r chi.Router) {
-		r.Put("/", docHandler.UpdateDocument)
-		r.Delete("/", docHandler.DeleteDocument)
+	r.Route("/api/documents/", func(r chi.Router) {
+		r.Use(mymiddleware.Auth)
+
+		r.Get("/", docHandler.ListDocuments)
+		r.Post("/", docHandler.CreateDocument)
+
+		r.Route("{document_id}", func(r chi.Router) {
+			r.Put("/", docHandler.UpdateDocument)
+			r.Delete("/", docHandler.DeleteDocument)
+		})
 	})
 
 	// 4. HTTPサーバーを起動する

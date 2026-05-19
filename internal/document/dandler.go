@@ -2,13 +2,13 @@ package document
 
 import (
 	"encoding/json"
-	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
-
 	"github.com/google/uuid"
+
 	"github.com/is0727kfJ/doc-share-saas/internal/database"
+	"github.com/is0727kfJ/doc-share-saas/internal/middleware"
 )
 
 // Handler 構造体
@@ -21,10 +21,9 @@ func NewHandler(q *database.Queries) *Handler {
 }
 
 type CreateDocumentRequest struct {
-	TeamID   uuid.UUID `json:"team_id"`
-	AuthorID uuid.UUID `json:"author_id"`
-	Title    string    `json:"title"`
-	Content  string    `json:"content"`
+	TeamID  string `json:"team_id"`
+	Title   string `json:"title"`
+	Content string `json:"content"`
 }
 
 type UpdateDocumentRequest struct {
@@ -35,23 +34,49 @@ type UpdateDocumentRequest struct {
 func (h *Handler) CreateDocument(w http.ResponseWriter, r *http.Request) {
 	var req CreateDocumentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "無効なリクエストボディ", http.StatusBadRequest)
+		http.Error(w, "無効なデータ形式です", http.StatusBadRequest)
 		return
 	}
 
-	newDoc, err := h.queries.CreateDocument(r.Context(), database.CreateDocumentParams{
-		TeamID:   req.TeamID,
-		AuthorID: req.AuthorID,
+	// リクエストの裏側（Context）に隠されている、ミドルウェアがセットした user_id を取り出す
+	userIDValue := r.Context().Value(middleware.UserIDKey)
+	if userIDValue == nil {
+		http.Error(w, "認証情報が見つかりません", http.StatusUnauthorized)
+		return
+	}
+
+	userIDStr, ok := userIDValue.(string)
+	if !ok {
+		http.Error(w, "ユーザーIDの形式が不正です", http.StatusInternalServerError)
+		return
+	}
+
+	authorID, err := uuid.Parse(userIDStr)
+	if err != nil {
+		http.Error(w, "無効なユーザーIDです", http.StatusInternalServerError)
+		return
+	}
+
+	teamID, err := uuid.Parse(req.TeamID)
+	if err != nil {
+		http.Error(w, "無効なチームIDです", http.StatusBadRequest)
+		return
+	}
+
+	// データベースに登録（AuthorID は、Contextから抜き出した確実な本人データを使う！）
+	doc, err := h.queries.CreateDocument(r.Context(), database.CreateDocumentParams{
 		Title:    req.Title,
 		Content:  req.Content,
+		AuthorID: authorID, //  偽造不可能なユーザーID
+		TeamID:   teamID,
 	})
 	if err != nil {
-		http.Error(w, fmt.Sprintf("ドキュメント作成エラー: %v", err), http.StatusInternalServerError)
+		http.Error(w, "ドキュメントの作成に失敗しました", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(newDoc)
+	json.NewEncoder(w).Encode(doc)
 }
 
 // ListDocuments : ドキュメントの一覧を取得して返す処理
@@ -87,44 +112,74 @@ func (h *Handler) ListDocumentsByTeam(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) UpdateDocument(w http.ResponseWriter, r *http.Request) {
+	// 1. URLから更新したいドキュメントのIDを取得
 	docIDStr := chi.URLParam(r, "document_id")
 	docID, err := uuid.Parse(docIDStr)
 	if err != nil {
-		http.Error(w, "無効なドキュメントID", http.StatusBadRequest)
+		http.Error(w, "無効なドキュメントIDです", http.StatusBadRequest)
 		return
 	}
+
+	// 2. Bodyから新しいタイトルとコンテンツを受け取る
 	var req UpdateDocumentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		http.Error(w, "無効なリクエストボディ", http.StatusBadRequest)
+		http.Error(w, "無効なデータ形式です", http.StatusBadRequest)
 		return
 	}
 
-	updatedDoc, err := h.queries.UpdateDocument(r.Context(), database.UpdateDocumentParams{
-		ID:      docID,
-		Title:   req.Title,
-		Content: req.Content,
-	})
-
+	// 3. 「操作している本人」のIDを取得
+	userIDValue := r.Context().Value(middleware.UserIDKey)
+	userIDStr, _ := userIDValue.(string)
+	authorID, err := uuid.Parse(userIDStr)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("ドキュメント更新エラー: %v", err), http.StatusInternalServerError)
+		http.Error(w, "無効なユーザーIDです", http.StatusInternalServerError)
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(updatedDoc)
-}
+	// 4. データベースの更新を実行
+	doc, err := h.queries.UpdateDocument(r.Context(), database.UpdateDocumentParams{
+		ID:       docID,
+		Title:    req.Title,
+		Content:  req.Content,
+		AuthorID: authorID, // 追加：他人が上書きしようとしても弾かれる
+	})
+	if err != nil {
+		http.Error(w, "ドキュメントの更新に失敗したか、権限がありません", http.StatusInternalServerError)
+		return
+	}
 
+	// 成功時は更新された最新のドキュメント情報を返す
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(doc)
+}
 func (h *Handler) DeleteDocument(w http.ResponseWriter, r *http.Request) {
+	// 1. URLから削除したいドキュメントのIDを取得
 	docIDStr := chi.URLParam(r, "document_id")
 	docID, err := uuid.Parse(docIDStr)
 	if err != nil {
-		http.Error(w, "無効なドキュメントID", http.StatusBadRequest)
+		http.Error(w, "無効なドキュメントIDです", http.StatusBadRequest)
 		return
 	}
-	err = h.queries.DeleteDocument(r.Context(), docID)
+
+	// 2. JWT（Context）から「操作している本人」のIDを取得
+	userIDValue := r.Context().Value(middleware.UserIDKey)
+	userIDStr, _ := userIDValue.(string)
+	authorID, err := uuid.Parse(userIDStr)
 	if err != nil {
-		http.Error(w, fmt.Sprintf("ドキュメント削除エラー: %v", err), http.StatusInternalServerError)
+		http.Error(w, "無効なユーザーIDです", http.StatusInternalServerError)
 		return
 	}
-	w.WriteHeader(http.StatusNoContent) // 204 No Content
+
+	// 3. データベースの削除を実行
+	err = h.queries.DeleteDocument(r.Context(), database.DeleteDocumentParams{
+		ID:       docID,
+		AuthorID: authorID, // ← 追加：他人のものはここで弾かれる
+	})
+	if err != nil {
+		http.Error(w, "ドキュメントの削除に失敗したか、権限がありません", http.StatusInternalServerError)
+		return
+	}
+
+	// 成功時は 204 No Content を返す
+	w.WriteHeader(http.StatusNoContent)
 }

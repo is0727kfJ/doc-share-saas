@@ -114,12 +114,17 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 }
 
 const deleteDocument = `-- name: DeleteDocument :exec
-DELETE FROM documents
-WHERE id = $1
+DELETE FROM documents 
+WHERE id = $1 AND author_id = $2
 `
 
-func (q *Queries) DeleteDocument(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteDocument, id)
+type DeleteDocumentParams struct {
+	ID       uuid.UUID `json:"id"`
+	AuthorID uuid.UUID `json:"author_id"`
+}
+
+func (q *Queries) DeleteDocument(ctx context.Context, arg DeleteDocumentParams) error {
+	_, err := q.db.Exec(ctx, deleteDocument, arg.ID, arg.AuthorID)
 	return err
 }
 
@@ -252,18 +257,24 @@ func (q *Queries) ListTeamMembers(ctx context.Context, teamID uuid.UUID) ([]List
 const updateDocument = `-- name: UpdateDocument :one
 UPDATE documents
 SET title = $2, content = $3, updated_at = NOW()
-WHERE id = $1
+WHERE id = $1 AND author_id = $4
 RETURNING id, team_id, author_id, title, content, created_at, updated_at
 `
 
 type UpdateDocumentParams struct {
-	ID      uuid.UUID `json:"id"`
-	Title   string    `json:"title"`
-	Content string    `json:"content"`
+	ID       uuid.UUID `json:"id"`
+	Title    string    `json:"title"`
+	Content  string    `json:"content"`
+	AuthorID uuid.UUID `json:"author_id"`
 }
 
 func (q *Queries) UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (Document, error) {
-	row := q.db.QueryRow(ctx, updateDocument, arg.ID, arg.Title, arg.Content)
+	row := q.db.QueryRow(ctx, updateDocument,
+		arg.ID,
+		arg.Title,
+		arg.Content,
+		arg.AuthorID,
+	)
 	var i Document
 	err := row.Scan(
 		&i.ID,
