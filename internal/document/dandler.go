@@ -3,6 +3,7 @@ package document
 import (
 	"encoding/json"
 	"net/http"
+	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
@@ -101,7 +102,27 @@ func (h *Handler) ListDocumentsByTeam(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	docs, err := h.queries.ListDocumentsByTeam(r.Context(), teamID)
+	limit := int32(10)
+	offset := int32(0)
+
+	if l := r.URL.Query().Get("limit"); l != "" {
+		if parsed, err := strconv.ParseInt(l, 10, 32); err == nil && parsed > 0 {
+			limit = int32(parsed)
+		}
+	}
+
+	if o := r.URL.Query().Get("offset"); o != "" {
+		if parsed, err := strconv.ParseInt(o, 10, 32); err == nil && parsed >= 0 {
+			offset = int32(parsed)
+		}
+	}
+
+	docs, err := h.queries.ListDocumentsByTeam(r.Context(), database.ListDocumentsByTeamParams{
+		TeamID: teamID,
+		Limit:  limit,
+		Offset: offset,
+	})
+
 	if err != nil {
 		http.Error(w, "ドキュメントの取得に失敗しました", http.StatusInternalServerError)
 		return

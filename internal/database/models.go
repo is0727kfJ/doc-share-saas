@@ -5,39 +5,40 @@
 package database
 
 import (
+	"time"
+
 	uuid "github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Document struct {
-	ID        uuid.UUID        `json:"id"`
-	TeamID    uuid.UUID        `json:"team_id"`
-	AuthorID  uuid.UUID        `json:"author_id"`
-	Title     string           `json:"title"`
-	Content   string           `json:"content"`
-	CreatedAt pgtype.Timestamp `json:"created_at"`
-	UpdatedAt pgtype.Timestamp `json:"updated_at"`
+	ID        uuid.UUID `json:"id"`
+	TeamID    uuid.UUID `json:"team_id"`
+	AuthorID  uuid.UUID `json:"author_id"`
+	Title     string    `json:"title"`
+	Content   string    `json:"content"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type Team struct {
-	ID        uuid.UUID        `json:"id"`
-	Name      string           `json:"name"`
-	CreatedAt pgtype.Timestamp `json:"created_at"`
-	UpdatedAt pgtype.Timestamp `json:"updated_at"`
+	ID        uuid.UUID `json:"id"`
+	Name      string    `json:"name"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
 }
 
 type TeamMember struct {
-	UserID   uuid.UUID        `json:"user_id"`
-	TeamID   uuid.UUID        `json:"team_id"`
-	Role     string           `json:"role"`
-	JoinedAt pgtype.Timestamp `json:"joined_at"`
+	UserID   uuid.UUID `json:"user_id"`
+	TeamID   uuid.UUID `json:"team_id"`
+	Role     string    `json:"role"`
+	JoinedAt time.Time `json:"joined_at"`
 }
 
 type User struct {
-	ID         uuid.UUID        `json:"id"`
-	CognitoSub string           `json:"cognito_sub"`
-	Name       string           `json:"name"`
-	Email      string           `json:"email"`
-	CreatedAt  pgtype.Timestamp `json:"created_at"`
-	UpdatedAt  pgtype.Timestamp `json:"updated_at"`
+	ID         uuid.UUID `json:"id"`
+	CognitoSub string    `json:"cognito_sub"`
+	Name       string    `json:"name"`
+	Email      string    `json:"email"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }

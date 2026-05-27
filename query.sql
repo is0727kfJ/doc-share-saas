@@ -18,9 +18,11 @@ VALUES ($1, $2, $3, $4)
 RETURNING *;
 
 -- name: ListDocumentsByTeam :many
-SELECT * FROM documents
+SELECT id, team_id, author_id, title, content, created_at, updated_at
+FROM documents
 WHERE team_id = $1
-ORDER BY created_at DESC;
+ORDER BY created_at DESC
+LIMIT $2 OFFSET $3;
 
 -- name: ListDocuments :many
 SELECT * FROM documents

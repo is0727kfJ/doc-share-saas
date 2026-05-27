@@ -7,9 +7,9 @@ package database
 
 import (
 	"context"
+	"time"
 
 	uuid "github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 const addTeamMember = `-- name: AddTeamMember :one
@@ -25,7 +25,7 @@ type AddTeamMemberParams struct {
 }
 
 func (q *Queries) AddTeamMember(ctx context.Context, arg AddTeamMemberParams) (TeamMember, error) {
-	row := q.db.QueryRow(ctx, addTeamMember, arg.UserID, arg.TeamID, arg.Role)
+	row := q.db.QueryRowContext(ctx, addTeamMember, arg.UserID, arg.TeamID, arg.Role)
 	var i TeamMember
 	err := row.Scan(
 		&i.UserID,
@@ -50,7 +50,7 @@ type CreateDocumentParams struct {
 }
 
 func (q *Queries) CreateDocument(ctx context.Context, arg CreateDocumentParams) (Document, error) {
-	row := q.db.QueryRow(ctx, createDocument,
+	row := q.db.QueryRowContext(ctx, createDocument,
 		arg.TeamID,
 		arg.AuthorID,
 		arg.Title,
@@ -76,7 +76,7 @@ RETURNING id, name, created_at, updated_at
 `
 
 func (q *Queries) CreateTeam(ctx context.Context, name string) (Team, error) {
-	row := q.db.QueryRow(ctx, createTeam, name)
+	row := q.db.QueryRowContext(ctx, createTeam, name)
 	var i Team
 	err := row.Scan(
 		&i.ID,
@@ -100,7 +100,7 @@ type CreateUserParams struct {
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
-	row := q.db.QueryRow(ctx, createUser, arg.CognitoSub, arg.Name, arg.Email)
+	row := q.db.QueryRowContext(ctx, createUser, arg.CognitoSub, arg.Name, arg.Email)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -124,7 +124,7 @@ type DeleteDocumentParams struct {
 }
 
 func (q *Queries) DeleteDocument(ctx context.Context, arg DeleteDocumentParams) error {
-	_, err := q.db.Exec(ctx, deleteDocument, arg.ID, arg.AuthorID)
+	_, err := q.db.ExecContext(ctx, deleteDocument, arg.ID, arg.AuthorID)
 	return err
 }
 
@@ -134,7 +134,7 @@ WHERE cognito_sub = $1 LIMIT 1
 `
 
 func (q *Queries) GetUserByCognitoSub(ctx context.Context, cognitoSub string) (User, error) {
-	row := q.db.QueryRow(ctx, getUserByCognitoSub, cognitoSub)
+	row := q.db.QueryRowContext(ctx, getUserByCognitoSub, cognitoSub)
 	var i User
 	err := row.Scan(
 		&i.ID,
@@ -153,7 +153,7 @@ ORDER BY created_at DESC
 `
 
 func (q *Queries) ListDocuments(ctx context.Context) ([]Document, error) {
-	rows, err := q.db.Query(ctx, listDocuments)
+	rows, err := q.db.QueryContext(ctx, listDocuments)
 	if err != nil {
 		return nil, err
 	}
@@ -173,6 +173,9 @@ func (q *Queries) ListDocuments(ctx context.Context) ([]Document, error) {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -181,13 +184,21 @@ func (q *Queries) ListDocuments(ctx context.Context) ([]Document, error) {
 }
 
 const listDocumentsByTeam = `-- name: ListDocumentsByTeam :many
-SELECT id, team_id, author_id, title, content, created_at, updated_at FROM documents
+SELECT id, team_id, author_id, title, content, created_at, updated_at
+FROM documents
 WHERE team_id = $1
 ORDER BY created_at DESC
+LIMIT $2 OFFSET $3
 `
 
-func (q *Queries) ListDocumentsByTeam(ctx context.Context, teamID uuid.UUID) ([]Document, error) {
-	rows, err := q.db.Query(ctx, listDocumentsByTeam, teamID)
+type ListDocumentsByTeamParams struct {
+	TeamID uuid.UUID `json:"team_id"`
+	Limit  int32     `json:"limit"`
+	Offset int32     `json:"offset"`
+}
+
+func (q *Queries) ListDocumentsByTeam(ctx context.Context, arg ListDocumentsByTeamParams) ([]Document, error) {
+	rows, err := q.db.QueryContext(ctx, listDocumentsByTeam, arg.TeamID, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
@@ -207,6 +218,9 @@ func (q *Queries) ListDocumentsByTeam(ctx context.Context, teamID uuid.UUID) ([]
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -223,14 +237,14 @@ ORDER BY team_members.joined_at DESC
 `
 
 type ListTeamMembersRow struct {
-	ID       uuid.UUID        `json:"id"`
-	Name     string           `json:"name"`
-	Role     string           `json:"role"`
-	JoinedAt pgtype.Timestamp `json:"joined_at"`
+	ID       uuid.UUID `json:"id"`
+	Name     string    `json:"name"`
+	Role     string    `json:"role"`
+	JoinedAt time.Time `json:"joined_at"`
 }
 
 func (q *Queries) ListTeamMembers(ctx context.Context, teamID uuid.UUID) ([]ListTeamMembersRow, error) {
-	rows, err := q.db.Query(ctx, listTeamMembers, teamID)
+	rows, err := q.db.QueryContext(ctx, listTeamMembers, teamID)
 	if err != nil {
 		return nil, err
 	}
@@ -247,6 +261,9 @@ func (q *Queries) ListTeamMembers(ctx context.Context, teamID uuid.UUID) ([]List
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -269,7 +286,7 @@ type UpdateDocumentParams struct {
 }
 
 func (q *Queries) UpdateDocument(ctx context.Context, arg UpdateDocumentParams) (Document, error) {
-	row := q.db.QueryRow(ctx, updateDocument,
+	row := q.db.QueryRowContext(ctx, updateDocument,
 		arg.ID,
 		arg.Title,
 		arg.Content,

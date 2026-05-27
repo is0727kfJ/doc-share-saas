@@ -3,12 +3,20 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
-var secretKey = []byte("super-secret-key")
+func getSecretKey() []byte {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		// 万が一設定し忘れていた時のために、エラーを出して止める安全設計
+		panic("JWT_SECRETが設定されていません！")
+	}
+	return []byte(secret)
+}
 
 // Handler : 認証関連のAPIをまとめる構造体
 type Handler struct{}
@@ -44,7 +52,7 @@ func (h *Handler) Login(w http.ResponseWriter, r *http.Request) {
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
 
 	// 3. 秘密鍵を使って「署名（ハンコ）」を押し、文字列（ey...）にする
-	tokenString, err := token.SignedString(secretKey)
+	tokenString, err := token.SignedString(getSecretKey())
 	if err != nil {
 		http.Error(w, "トークンの生成に失敗しました", http.StatusInternalServerError)
 		return

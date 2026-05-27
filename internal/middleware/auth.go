@@ -5,13 +5,21 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
 
 // JWTの署名検証に使う秘密鍵
-var secretKey = []byte("super-secret-key")
+func getSecretKey() []byte {
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		// 万が一設定し忘れていた時のために、エラーを出して止める安全設計
+		panic("JWT_SECRETが設定されていません！")
+	}
+	return []byte(secret)
+}
 
 // ContextKey : Goのコンテキストにデータを詰め込むための専用の型
 type ContextKey string
@@ -35,7 +43,7 @@ func Auth(next http.Handler) http.Handler {
 			if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
 				return nil, fmt.Errorf("予期しない署名アルゴリズム")
 			}
-			return secretKey, nil
+			return getSecretKey(), nil
 		})
 
 		// 3. トークンが不正、または期限切れの場合

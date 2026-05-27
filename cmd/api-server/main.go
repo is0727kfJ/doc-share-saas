@@ -1,7 +1,7 @@
 package main
 
 import (
-	"context"
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -10,8 +10,9 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
-	"github.com/jackc/pgx/v5"
 	"github.com/joho/godotenv"
+	_ "github.com/lib/pq"
+	"golang.org/x/time/rate"
 
 	"github.com/is0727kfJ/doc-share-saas/internal/auth"
 	"github.com/is0727kfJ/doc-share-saas/internal/database"
@@ -22,78 +23,97 @@ import (
 )
 
 func main() {
-	_ = godotenv.Load() // .envファイルがなくても続行するため、エラーは無視
+	// ==========================================
+	// 1. 環境変数の読み込みとデータベース接続
+	// ==========================================
+	err := godotenv.Load()
+	if err != nil {
+		log.Println(".envファイルが見つかりません。OSの環境変数を使用します。")
+	}
+
 	dbURL := os.Getenv("DB_URL")
 	if dbURL == "" {
 		log.Fatal("DB_URLが設定されていません")
 	}
 
-	// 2. データベースへ接続する
-	ctx := context.Background()
-	conn, err := pgx.Connect(ctx, dbURL)
+	db, err := sql.Open("postgres", dbURL)
 	if err != nil {
-		log.Fatalf("データベース接続エラー: %v\n", err)
+		log.Fatal("データベースの接続に失敗:", err)
 	}
-	defer conn.Close(ctx)
+	defer db.Close()
 
-	// 3. sqlcで自動生成された関数群呼び出す準備
-	queries := database.New(conn)
+	// sqlcが自動生成したクエリの初期化
+	queries := database.New(db)
 
+	// ==========================================
+	// 2. ハンドラー（機能）の初期化
+	// ==========================================
+	userHandler := user.NewHandler(queries)
+	authHandler := auth.NewHandler()
+	teamHandler := team.NewHandler(queries)
+	docHandler := document.NewHandler(queries)
+
+	// ==========================================
+	// 3. ルーターとミドルウェア（門番）の設定
+	// ==========================================
 	r := chi.NewRouter()
 
-	r.Use(middleware.Logger)    // ロギングミドルウェアを追加
-	r.Use(middleware.Recoverer) // パニックからの回復ミドルウェアを追加
+	// 基本のログ出力
+	r.Use(middleware.Logger)
+
+	// CORS設定（Next.jsなどのフロントエンドからの通信を許可）
 	r.Use(cors.Handler(cors.Options{
-		// Next.jsが動くポート（3000）からのアクセスだけを許可する
 		AllowedOrigins: []string{"http://localhost:3000"},
-		// 許可するHTTPメソッド（今回作ったCRUDをすべて許可）
 		AllowedMethods: []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"},
-		// フロントエンドから送られてくるヘッダーを許可
 		AllowedHeaders: []string{"Accept", "Authorization", "Content-Type", "X-CSRF-Token"},
-		// ブラウザにキャッシュさせる時間（秒）
-		MaxAge: 300,
+		MaxAge:         300,
 	}))
 
-	// ルートハンドラーを定義
-	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
-		w.Write([]byte("OK"))
-	})
+	limiter := mymiddleware.NewIPRateLimiter(rate.Limit(1), 3)
+	r.Use(limiter.RateLimitMiddleware)
 
-	authHandler := auth.NewHandler()
-	userHandler := user.NewHandler(queries)
-	docHandler := document.NewHandler(queries)
-	teamHandler := team.NewHandler(queries)
+	// ==========================================
+	// 4. APIエンドポイント（URL）の定義
+	// ==========================================
 
-	r.Post("/api/users", userHandler.CreateUser)
-	r.Post("/api/teams", teamHandler.CreateTeam)
-	r.Post("/api/auth/login", authHandler.Login)
+	// 【公開API】（防弾ガラスの外側：誰でもアクセス可能）
+	r.Post("/api/users", userHandler.CreateUser) // 新規登録
+	r.Post("/api/auth/login", authHandler.Login) // ログイン（JWT発行）
 
+	// 【認証API】（防弾ガラスの内側：JWTトークンが必須）
+	// チーム関連の操作
 	r.Route("/api/teams/{team_id}", func(r chi.Router) {
-		r.Use(mymiddleware.Auth) // 認証ミドルウェアを適用
-		// GET /api/teams/{team_id}/documents
-		r.Get("/documents", docHandler.ListDocumentsByTeam)
-		// POST /api/teams/{team_id}/members
-		r.Post("/members", teamHandler.AddMember)
-		// GET /api/teams/{team_id}/members
-		r.Get("/members", teamHandler.ListTeamMembers)
+		r.Use(mymiddleware.Auth) // ここを通るにはトークンが必要！
+
+		r.Get("/documents", docHandler.ListDocumentsByTeam) // チームのドキュメント一覧
+		r.Post("/members", teamHandler.AddMember)           // メンバー招待
+		r.Get("/members", teamHandler.ListTeamMembers)      // メンバー一覧
 	})
 
-	r.Route("/api/documents/", func(r chi.Router) {
-		r.Use(mymiddleware.Auth)
+	// ドキュメント単体の操作
+	r.Route("/api/documents", func(r chi.Router) {
+		r.Use(mymiddleware.Auth) // ここを通るにはトークンが必要！
 
-		r.Get("/", docHandler.ListDocuments)
-		r.Post("/", docHandler.CreateDocument)
+		r.Post("/", docHandler.CreateDocument) // ドキュメント作成（JWTから作成者を自動判定）
 
-		r.Route("{document_id}", func(r chi.Router) {
-			r.Put("/", docHandler.UpdateDocument)
-			r.Delete("/", docHandler.DeleteDocument)
+		// 特定のドキュメント（ID指定）の操作
+		r.Route("/{document_id}", func(r chi.Router) {
+			r.Put("/", docHandler.UpdateDocument)    // 更新（本人のみ）
+			r.Delete("/", docHandler.DeleteDocument) // 削除（本人のみ）
 		})
 	})
 
-	// 4. HTTPサーバーを起動する
-	fmt.Println("APIサーバーが http://localhost:8080 で起動しました")
-	if err := http.ListenAndServe(":8080", r); err != nil {
-		log.Fatalf("サーバーエラー: %v\n", err)
+	// ==========================================
+	// 5. サーバー起動
+	// ==========================================
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
 	}
 
+	fmt.Printf("サーバーをポート %s で起動しました...\n", port)
+	err = http.ListenAndServe(":"+port, r)
+	if err != nil {
+		log.Fatal("サーバーの起動に失敗しました:", err)
+	}
 }

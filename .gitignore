@@ -1,6 +1,14 @@
 # ビルドされたバイナリ
 /bin/
 /doc-share-saas
+/tmp/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
 
 # 環境変数ファイル（パスワードなどを書くため絶対にプッシュしない）
 .env
